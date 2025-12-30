@@ -1,20 +1,64 @@
 pipeline {
     agent any
+
+    environment {
+        VENV_DIR = "venv"
+        ARTIFACT_NAME = "flask_app_build.tar.gz"
+        DEPLOY_DIR = "${WORKSPACE}/deploy_target"
+    }
+
     stages {
-        stage('Build') {
+
+        stage('Clone Repository') {
             steps {
-                echo 'Building...'
+                checkout scm
             }
         }
-        stage('Test') {
+
+        stage('Install Dependencies') {
             steps {
-                echo 'Testing...'
+                sh '''
+                    python3 -m venv ${VENV_DIR}
+                    source ${VENV_DIR}/bin/activate
+                    pip install --upgrade pip
+                    pip install -r requirements.txt
+                '''
             }
         }
-        stage('Deploy') {
+
+        stage('Run Unit Tests') {
             steps {
-                echo 'Deploying...'
+                sh '''
+                    source ${VENV_DIR}/bin/activate
+                    mkdir -p reports
+                    pytest --junitxml=reports/junit.xml
+                '''
             }
+        }
+
+        stage('Build Application') {
+            steps {
+                sh '''
+                    tar --exclude=${VENV_DIR} --exclude=.git -czf ${ARTIFACT_NAME} .
+                '''
+            }
+        }
+
+        stage('Deploy Application') {
+            steps {
+                sh '''
+                    mkdir -p ${DEPLOY_DIR}
+                    cp ${ARTIFACT_NAME} ${DEPLOY_DIR}/
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: "${ARTIFACT_NAME}", fingerprint: true
+            junit 'reports/junit.xml'
+            cleanWs()
         }
     }
 }
